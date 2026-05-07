@@ -1,0 +1,350 @@
+1
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+require("dotenv").config();
+
+const authRoutes = require("./routes/authRoutes");
+const newsRoutes = require("./routes/newsRoutes");
+
+const app = express();
+
+app.use(cors());
+app.use(express.json());
+
+mongoose
+.connect(process.env.MONGO_URI)
+.then(() => console.log("MongoDB Connected"))
+.catch((err) => console.log(err));
+
+app.use("/api/auth", authRoutes);
+app.use("/api/news", newsRoutes);
+
+app.get("/", (req, res) => {
+res.send("News Portal API Running");
+});
+
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+console.log(Server running on ${PORT});
+});
+
+2
+const mongoose = require("mongoose");
+
+const userSchema = new mongoose.Schema({
+name: String,
+email: String,
+password: String,
+});
+
+module.exports = mongoose.model("User", userSchema);
+3
+const mongoose = require("mongoose");
+
+const newsSchema = new mongoose.Schema(
+{
+title: String,
+description: String,
+image: String,
+category: String,
+author: {
+type: mongoose.Schema.Types.ObjectId,
+ref: "User",
+},
+},
+{
+timestamps: true,
+}
+);
+
+module.exports = mongoose.model("News", newsSchema);
+4
+const jwt = require("jsonwebtoken");
+
+const verifyToken = (req, res, next) => {
+
+const authHeader = req.headers.authorization;
+
+if (!authHeader) {
+return res.status(401).json({
+message: "Unauthorized",
+});
+}
+
+const token = authHeader.split(" ")[1];
+
+jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+
+if (err) {
+  return res.status(403).json({
+    message: "Invalid Token",
+  });
+}
+
+req.user = decoded;
+
+next();
+});
+};
+
+module.exports = verifyToken;
+
+5
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+const User = require("../models/User");
+
+const router = express.Router();
+
+// Register
+router.post("/register", async (req, res) => {
+
+try {
+
+const { name, email, password } = req.body;
+
+const userExists = await User.findOne({ email });
+
+if (userExists) {
+  return res.status(400).json({
+    message: "User already exists",
+  });
+}
+
+const hashedPassword = await bcrypt.hash(password, 10);
+
+const user = new User({
+  name,
+  email,
+  password: hashedPassword,
+});
+
+await user.save();
+
+res.status(201).json({
+  message: "User Registered Successfully",
+});
+} catch (error) {
+
+res.status(500).json({
+  message: "Registration Failed",
+});
+}
+});
+
+// Login
+router.post("/login", async (req, res) => {
+
+try {
+
+const { email, password } = req.body;
+
+const user = await User.findOne({ email });
+
+if (!user) {
+  return res.status(400).json({
+    message: "User not found",
+  });
+}
+
+const isMatch = await bcrypt.compare(
+  password,
+  user.password
+);
+
+if (!isMatch) {
+  return res.status(400).json({
+    message: "Invalid credentials",
+  });
+}
+
+const token = jwt.sign(
+  {
+    id: user._id,
+  },
+  process.env.JWT_SECRET,
+  {
+    expiresIn: "7d",
+  }
+);
+
+res.status(200).json({
+  token,
+  user,
+});
+} catch (error) {
+
+res.status(500).json({
+  message: "Login Failed",
+});
+}
+});
+
+module.exports = router;
+
+6
+const express = require("express");
+
+const News = require("../models/News");
+const verifyToken = require("../middleware/authMiddleware");
+
+const router = express.Router();
+
+// Get All News
+router.get("/", async (req, res) => {
+
+const news = await News.find().populate("author");
+
+res.json(news);
+});
+
+// Top 6 News
+router.get("/top", async (req, res) => {
+
+const topNews = await News.find()
+.sort({ createdAt: -1 })
+.limit(6);
+
+res.json(topNews);
+});
+
+// Single News
+router.get("/:id", async (req, res) => {
+
+const news = await News.findById(req.params.id);
+
+res.json(news);
+});
+
+// Create News
+router.post("/", verifyToken, async (req, res) => {
+
+const newNews = new News({
+...req.body,
+author: req.user.id,
+});
+
+await newNews.save();
+
+res.status(201).json(newNews);
+});
+
+// Update News
+router.put("/:id", verifyToken, async (req, res) => {
+
+const updatedNews = await News.findByIdAndUpdate(
+req.params.id,
+req.body,
+{ new: true }
+);
+
+res.json(updatedNews);
+});
+
+// Delete News
+router.delete("/:id", verifyToken, async (req, res) => {
+
+await News.findByIdAndDelete(req.params.id);
+
+res.json({
+message: "News Deleted",
+});
+});
+
+module.exports = router;
+
+7
+MONGO_URI=YOUR_MONGODB_URL
+JWT_SECRET=secretkey
+PORT=5000
+
+8
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")).render(
+<React.StrictMode>
+
+</React.StrictMode>
+);
+
+9
+import {
+BrowserRouter,
+Routes,
+Route,
+} from "react-router-dom";
+
+import Home from "./pages/Home";
+import News from "./pages/News";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
+import Dashboard from "./pages/Dashboard";
+import Contact from "./pages/Contact";
+import NewsDetails from "./pages/NewsDetails";
+import CreateNews from "./pages/CreateNews";
+
+import Header from "./components/Header";
+import Footer from "./components/Footer";
+
+function App() {
+
+return (
+
+  <Header />
+
+  <Routes>
+
+    <Route path="/" element={<Home />} />
+
+    <Route path="/news" element={<News />} />
+
+    <Route
+      path="/news/:id"
+      element={<NewsDetails />}
+    />
+
+    <Route path="/login" element={<Login />} />
+
+    <Route
+      path="/register"
+      element={<Register />}
+    />
+
+    <Route
+      path="/dashboard"
+      element={<Dashboard />}
+    />
+
+    <Route
+      path="/create-news"
+      element={<CreateNews />}
+    />
+
+    <Route path="/contact" element={<Contact />} />
+
+  </Routes>
+
+  <Footer />
+
+</BrowserRouter>
+);
+}
+
+export default App;
+
+10
+
+npm install react-router-dom axios
+
+11
+npm install express mongoose cors dotenv bcryptjs jsonwebtoken
+12
+npm run dev
+
